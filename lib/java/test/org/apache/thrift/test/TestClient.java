@@ -168,10 +168,21 @@ public class TestClient {
         TSocket socket = null;
         if (ssl == true) {
           TSSLTransportFactory.TSSLTransportParameters params = new TSSLTransportFactory.TSSLTransportParameters();
-          String path = new File("").getCanonicalPath() + File.separator + "test" + File.separator + ".truststore";
-          System.out.println("Truststore-path: " + path);
-          params.setKeyStore(new FileInputStream(path), "thrift");
+          String path = new File("").getCanonicalPath();
+          System.out.println(path);
+          path = path.endsWith("java"+ File.separator + "build") ? path.substring(0, path.length() - 6) : path;
+          String pathKey = path + File.separator + "test" + File.separator + ".keystore";
+          String pathTrustStore = path + File.separator + "test" + File.separator + ".truststore";
+//          System.out.println("Keystore-path: " + pathKey);
+          params.setKeyStore(new FileInputStream(pathKey), "thrift");
+          params.setTrustStore(new FileInputStream(pathTrustStore), "thrift");
+          System.out.println("Truststore-path: " + pathTrustStore);
           socket = TSSLTransportFactory.getClientSocket(host, port, 0, params);
+//          String pathPem = "/thrift/src/test/keys/client.pem";
+//          String pathKey = "/thrift/src/test/keys/client.key";
+//          socket = TSSLTransportFactory.getClientSocketFromPEM(host, port, 0, params, "thrift", pathPem, pathKey);
+//          socket = TSSLTransportFactory.getClientSocket(host, port, 0);
+
         } else {
           socket = new TSocket(host, port);
         }

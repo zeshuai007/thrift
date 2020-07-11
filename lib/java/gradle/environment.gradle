@@ -50,6 +50,7 @@ ext.slf4jVersion = property('slf4j.version')
 ext.junitVersion = property('junit.version')
 ext.mockitoVersion = property('mockito.version')
 ext.javaxAnnotationVersion = property('javax.annotation.version')
+ext.bouncycastleversion = property('bouncycastle.version')
 
 // In this section you declare where to find the dependencies of your project
 repositories {
@@ -70,6 +71,8 @@ dependencies {
     //compile "javax.servlet:servlet-api:${servletVersion}"
     compile "org.apache.tomcat.embed:tomcat-embed-core:${tomcatEmbedVersion}"
     compile "javax.annotation:javax.annotation-api:${javaxAnnotationVersion}"
+
+    compile "org.bouncycastle:bcprov-jdk15on:${bouncycastleversion}"
 
     testCompile "junit:junit:${junitVersion}"
     testCompile "org.mockito:mockito-all:${mockitoVersion}"

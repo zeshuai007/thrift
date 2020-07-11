@@ -285,10 +285,18 @@ public class TestServer {
           String path = new File("").getCanonicalPath();
           System.out.println(path);
           path = path.endsWith("java"+ File.separator + "build") ? path.substring(0, path.length() - 6) : path;
-          path = path + File.separator + "test" + File.separator + ".keystore";
-          System.out.println("Keystore-path: " + path);
-          params.setKeyStore(new FileInputStream(path), "thrift");
+          String pathKey = path + File.separator + "test" + File.separator + ".keystore";
+          String pathTrustStore = path + File.separator + "test" + File.separator + ".truststore";
+          System.out.println("Keystore-path: " + pathKey);
+          params.setKeyStore(new FileInputStream(pathKey), "thrift");
+          params.setTrustStore(new FileInputStream(pathTrustStore), "thrift");
           tServerSocket = TSSLTransportFactory.getServerSocket(port, 0, InetAddress.getByName("localhost"), params);
+
+//          params.setTrustStore(new FileInputStream(path), "thrift");
+//          String pathPem = "/thrift/src/test/keys/client.pem";
+//          String pathKey = "/thrift/src/test/keys/client.key";
+//          tServerSocket = TSSLTransportFactory.getServerSocketFromPEM(port, 0, InetAddress.getByName("localhost"), params, "thrift", pathPem, pathKey);
+//          tServerSocket = TSSLTransportFactory.getServerSocket(port, 0);
         } else {
           tServerSocket = new TServerSocket(new TServerSocket.ServerSocketTransportArgs().port(port));
         }

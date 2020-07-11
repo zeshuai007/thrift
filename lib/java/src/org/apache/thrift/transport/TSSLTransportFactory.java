@@ -19,24 +19,29 @@
 
 package org.apache.thrift.transport;
 
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.InputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.InetAddress;
 import java.net.URL;
 import java.net.MalformedURLException;
+import java.security.KeyFactory;
 import java.security.KeyStore;
+import java.security.NoSuchAlgorithmException;
+import java.security.Security;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.security.interfaces.RSAPrivateKey;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Arrays;
 
-import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLServerSocket;
-import javax.net.ssl.SSLServerSocketFactory;
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.*;
 
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.util.io.pem.PemObject;
+import org.bouncycastle.util.io.pem.PemReader;
+import org.bouncycastle.util.io.pem.PemWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,7 +50,7 @@ import org.slf4j.LoggerFactory;
  *  TSocket and TServerSocket
  */
 public class TSSLTransportFactory {
-  
+
   private static final Logger LOGGER =
       LoggerFactory.getLogger(TSSLTransportFactory.class);
 
@@ -115,6 +120,19 @@ public class TSSLTransportFactory {
     return createServer(ctx.getServerSocketFactory(), port, clientTimeout, params.clientAuth, ifAddress, params);
   }
 
+  public static TServerSocket getServerSocketFromPEM(int port, int clientTimeout, InetAddress ifAddress, TSSLTransportParameters params, String pass, String pathPem, String pathKey) throws TTransportException {
+    if (params == null || !(params.isKeyStoreSet || params.isTrustStoreSet)) {
+      throw new TTransportException("Either one of the KeyStore or TrustStore must be set for SSLTransportParameters");
+    }
+
+    try {
+      return createServer(getSocketFactoryPEMToS(pathPem, pathKey, pass), port, clientTimeout, params.clientAuth, ifAddress, params);
+    } catch (Exception e) {
+      throw new TTransportException("The pem to keystore error", e);
+    }
+
+  }
+
   private static TServerSocket createServer(SSLServerSocketFactory factory, int port, int timeout, boolean clientAuth,
                                     InetAddress ifAddress, TSSLTransportParameters params) throws TTransportException {
     try {
@@ -177,6 +195,90 @@ public class TSSLTransportFactory {
 
     SSLContext ctx = createSSLContext(params);
     return createClient(ctx.getSocketFactory(), host, port, timeout);
+  }
+
+  public static TSocket getClientSocketFromPEM(String host, int port, int timeout, TSSLTransportParameters params, String pass, String pathPem, String pathKey) throws TTransportException {
+    if (params == null || !(params.isKeyStoreSet || params.isTrustStoreSet)) {
+      throw new TTransportException(TTransportException.NOT_OPEN, "Either one of the KeyStore or TrustStore must be set for SSLTransportParameters");
+    }
+
+    try {
+      return createClient(getSocketFactoryPEMToC(pathPem, pathKey, pass), host, port, timeout);
+    } catch (Exception e) {
+      throw new TTransportException("The pem to keystore error", e);
+    }
+  }
+
+  protected static SSLSocketFactory getSocketFactoryPEMToC(String pathPem,String pathKey, String pass) throws Exception {
+    Security.addProvider(new BouncyCastleProvider());
+    System.out.println("getCanonicalPath: "+ new File("").getCanonicalPath());
+    PemObject poC = new PemFile(pathPem).getPemObject();
+    byte[] certBytes = poC.getContent();
+
+    PemObject poK = new PemFile(pathKey).getPemObject();
+    byte[] keyBytes = poK.getContent();
+
+    X509Certificate cert = generateCertificateFromDER(certBytes);
+    RSAPrivateKey key  = generatePrivateKeyFromDER(keyBytes);
+
+    KeyStore keystore = KeyStore.getInstance("JKS");
+    keystore.load(null);
+    keystore.setCertificateEntry("cert-alias", cert);
+    keystore.setKeyEntry("key-alias", key, pass.toCharArray(), new Certificate[] {cert});
+
+    KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+    kmf.init(keystore, pass.toCharArray());
+
+    KeyManager[] km = kmf.getKeyManagers();
+
+    SSLContext context = SSLContext.getInstance("TLS");
+    context.init(km, null, null);
+
+    return context.getSocketFactory();
+  }
+
+  protected static SSLServerSocketFactory getSocketFactoryPEMToS(String pathPem,String pathKey, String pass) throws Exception {
+    Security.addProvider(new BouncyCastleProvider());
+    System.out.println("getCanonicalPath: "+ new File("").getCanonicalPath());
+    PemObject poC = new PemFile(pathPem).getPemObject();
+    byte[] certBytes = poC.getContent();
+
+    PemObject poK = new PemFile(pathKey).getPemObject();
+    byte[] keyBytes = poK.getContent();
+
+    X509Certificate cert = generateCertificateFromDER(certBytes);
+    RSAPrivateKey key  = generatePrivateKeyFromDER(keyBytes);
+
+    KeyStore keystore = KeyStore.getInstance("JKS");
+    keystore.load(null);
+    keystore.setCertificateEntry("cert-alias", cert);
+    keystore.setKeyEntry("key-alias", key, pass.toCharArray(), new Certificate[] {cert});
+
+
+    TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
+//    KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+//    kmf.init(keystore, pass.toCharArray());
+//    KeyManager[] km = kmf.getKeyManagers();
+    tmf.init(keystore);
+
+    SSLContext context = SSLContext.getInstance("TLS");
+    context.init(null, tmf.getTrustManagers(), null);
+
+    return context.getServerSocketFactory();
+  }
+
+  protected static RSAPrivateKey generatePrivateKeyFromDER(byte[] keyBytes) throws InvalidKeySpecException, NoSuchAlgorithmException {
+    PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
+
+    KeyFactory factory = KeyFactory.getInstance("RSA");
+
+    return (RSAPrivateKey)factory.generatePrivate(spec);
+  }
+
+  protected static X509Certificate generateCertificateFromDER(byte[] certBytes) throws CertificateException {
+    CertificateFactory factory = CertificateFactory.getInstance("X.509");
+
+    return (X509Certificate)factory.generateCertificate(new ByteArrayInputStream(certBytes));
   }
 
   private static SSLContext createSSLContext(TSSLTransportParameters params) throws TTransportException {
@@ -350,7 +452,7 @@ public class TSSLTransportFactory {
       }
       isKeyStoreSet = true;
     }
-    
+
     /**
      * Set the keystore, password, certificate type and the store type
      *
@@ -363,7 +465,7 @@ public class TSSLTransportFactory {
     	this.keyStoreStream = keyStoreStream;
     	setKeyStore("", keyPass, keyManagerType, keyStoreType);
     }
-    
+
     /**
      * Set the keystore and password
      *
@@ -373,7 +475,7 @@ public class TSSLTransportFactory {
     public void setKeyStore(String keyStore, String keyPass) {
       setKeyStore(keyStore, keyPass, null, null);
     }
-    
+
     /**
      * Set the keystore and password
      *
@@ -383,7 +485,7 @@ public class TSSLTransportFactory {
     public void setKeyStore(InputStream keyStoreStream, String keyPass) {
       setKeyStore(keyStoreStream, keyPass, null, null);
     }
-    
+
     /**
      * Set the truststore, password, certificate type and the store type
      *
@@ -403,7 +505,7 @@ public class TSSLTransportFactory {
       }
       isTrustStoreSet = true;
     }
-    
+
     /**
      * Set the truststore, password, certificate type and the store type
      *
@@ -426,7 +528,7 @@ public class TSSLTransportFactory {
     public void setTrustStore(String trustStore, String trustPass) {
       setTrustStore(trustStore, trustPass, null, null);
     }
-    
+
     /**
      * Set the truststore and password
      *
@@ -446,4 +548,28 @@ public class TSSLTransportFactory {
       this.clientAuth = clientAuth;
 		}
 	}
+
+  public static class PemFile {
+
+    private PemObject pemObject;
+
+    public PemFile(String filename) throws IOException {
+      try(PemReader pemReader = new PemReader(new InputStreamReader(
+              new FileInputStream(filename)))){
+        this.pemObject = pemReader.readPemObject();
+      }
+    }
+
+    public void write(String filename) throws IOException {
+      try(PemWriter pemWriter = new PemWriter(new OutputStreamWriter(
+              new FileOutputStream(filename)))){
+        pemWriter.writeObject(this.pemObject);
+      }
+    }
+
+    public PemObject getPemObject() {
+      return pemObject;
+    }
+
+  }
 }

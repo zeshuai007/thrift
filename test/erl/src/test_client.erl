@@ -52,7 +52,7 @@ parse_args([Head | Rest], Opts) ->
                 SslOptions =
                     {ssloptions, [
                         {cacertfile, "../keys/CA.pem"},
-                        {certfile, "../keys/client.pem"},
+                        {certfile, "../keys/client.crt"},
                         {keyfile, "../keys/client.key"}
                     ]},
                 Opts#options{client_opts = [{ssltransport, true} | [SslOptions | Opts#options.client_opts]]};
