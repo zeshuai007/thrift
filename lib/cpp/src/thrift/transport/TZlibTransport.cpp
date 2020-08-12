@@ -20,9 +20,12 @@
 #include <cassert>
 #include <cstring>
 #include <algorithm>
+#include <iostream>
+#include <string>
 #include <thrift/transport/TZlibTransport.h>
 
 using std::string;
+using namespace std;
 
 namespace apache {
 namespace thrift {
@@ -231,6 +234,7 @@ bool TZlibTransport::readFromZlib() {
 // - Deflate from the source into the compressed buffer.
 
 void TZlibTransport::write(const uint8_t* buf, uint32_t len) {
+  std::cout << "len:" << len << std::endl;
   if (output_finished_) {
     throw TTransportException(TTransportException::BAD_ARGS, "write() called after finish()");
   }
@@ -238,10 +242,12 @@ void TZlibTransport::write(const uint8_t* buf, uint32_t len) {
   // zlib's "deflate" function has enough logic in it that I think
   // we're better off (performance-wise) buffering up small writes.
   if (len > MIN_DIRECT_DEFLATE_SIZE) {
+	  std::cout << "len:" << len << std::endl;
     flushToZlib(uwbuf_, uwpos_, Z_NO_FLUSH);
     uwpos_ = 0;
     flushToZlib(buf, len, Z_NO_FLUSH);
   } else if (len > 0) {
+	  std::cout << "s-pos:" << (uwbuf_size_ - uwpos_) << std::endl;
     if (uwbuf_size_ - uwpos_ < len) {
       flushToZlib(uwbuf_, uwpos_, Z_NO_FLUSH);
       uwpos_ = 0;

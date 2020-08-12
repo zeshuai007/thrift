@@ -29,7 +29,8 @@
     },
     "transports": [
       "buffered",
-      "framed"
+      "framed",
+      "zlib"
     ],
     "sockets": [
       "ip",
@@ -49,14 +50,14 @@
       "command": ["TestServer"],
       "workdir": "cl",
       "protocols": ["binary", "multi"],
-      "transports": ["buffered", "framed"],
+      "transports": ["buffered", "framed", "zlib"],
       "sockets": ["ip"]
     },
     "client": {
       "command": ["TestClient"],
       "workdir": "cl",
       "protocols": ["binary", "multi"],
-      "transports": ["buffered", "framed"],
+      "transports": ["buffered", "framed", "zlib"],
       "sockets": ["ip"]
     }
   },

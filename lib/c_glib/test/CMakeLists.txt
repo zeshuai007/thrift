@@ -130,6 +130,14 @@ add_executable(testthriftmemorybufferreadcheck testthriftmemorybufferreadcheck.c
 target_link_libraries(testthriftmemorybufferreadcheck testgenc)
 add_test(NAME testthriftmemorybufferreadcheck COMMAND testthriftmemorybufferreadcheck)
 
+if(WITH_ZLIB)
+  include_directories(SYSTEM "${ZLIB_INCLUDE_DIRS}")
+  add_executable(testzlibtransport testzlibtransport.c)
+  target_link_libraries(testzlibtransport testgenc ${ZLIB_LIBRARIES})
+  LINK_AGAINST_THRIFT_LIBRARY(testzlibtransport thrift_c_glib_zlib)
+  add_test(NAME testzlibtransport COMMAND testzlibtransport)
+endif(WITH_ZLIB)
+
 include_directories("${PROJECT_SOURCE_DIR}/test/c_glib/src" "${CMAKE_CURRENT_BINARY_DIR}/gen-c_glib")
 
 add_executable(testthrifttest testthrifttest.c

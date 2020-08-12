@@ -31,6 +31,7 @@
 #include <thrift/c_glib/protocol/thrift_multiplexed_protocol.h>
 #include <thrift/c_glib/transport/thrift_buffered_transport.h>
 #include <thrift/c_glib/transport/thrift_framed_transport.h>
+#include <thrift/c_glib/transport/thrift_zlib_transport.h>
 #include <thrift/c_glib/transport/thrift_ssl_socket.h>
 #include <thrift/c_glib/transport/thrift_socket.h>
 #include <thrift/c_glib/transport/thrift_transport.h>
@@ -97,7 +98,7 @@ main (int argc, char **argv)
     { "ssl",             's', 0, G_OPTION_ARG_NONE,     &ssl,
       "Enable SSL", NULL },
     { "transport",       't', 0, G_OPTION_ARG_STRING,   &transport_option,
-      "Transport: buffered, framed (=buffered)", NULL },
+      "Transport: buffered, framed, zlib (=buffered)", NULL },
     { "protocol",        'r', 0, G_OPTION_ARG_STRING,   &protocol_option,
       "Protocol: binary, compact, multi, multic (=binary)", NULL },
     { "testloops",       'n', 0, G_OPTION_ARG_INT,      &num_tests,
@@ -184,6 +185,10 @@ main (int argc, char **argv)
     if (strncmp (transport_option, "framed", 7) == 0) {
       transport_type = THRIFT_TYPE_FRAMED_TRANSPORT;
       transport_name = "framed";
+    }
+    else if (strncmp (transport_option, "zlib", 5) == 0) {
+      transport_type = THRIFT_TYPE_ZLIB_TRANSPORT;
+      transport_name = "zlib";
     }
     else if (strncmp (transport_option, "buffered", 9) != 0) {
       fprintf (stderr, "Unknown transport type %s\n", transport_option);
@@ -349,10 +354,11 @@ main (int argc, char **argv)
       if (path) {
         printf ("Test #%d, connect %s\n", test_num + 1, path);
       } else {
+	printf("123");
         printf ("Test #%d, connect %s:%d\n", test_num + 1, host, port);
       }
       gettimeofday (&time_start, NULL);
-
+      printf("qqwww");
       /* These test routines have been ported from the C++ test
          client, care being taken to ensure their output remains as
          close as possible to the original to facilitate diffs.
