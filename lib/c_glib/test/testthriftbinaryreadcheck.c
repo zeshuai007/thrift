@@ -173,7 +173,7 @@ test_read_and_wirte_complex_types (void)
                             "port", port, "path", NULL, 
                             "configuration", tconfiguration, NULL);
     transport = THRIFT_TRANSPORT (tsocket);
-    THRIFT_TRANSPORT_GET_CLASS (tsocket)->resetConsumedMessageSize(tsocket, -1, NULL);
+    THRIFT_TRANSPORT_GET_CLASS (tsocket)->resetConsumedMessageSize(THRIFT_TRANSPORT (tsocket), -1, NULL);
     thrift_transport_open (transport, NULL);
     g_assert (thrift_transport_is_open (transport));
 
