@@ -34,7 +34,6 @@ from thrift.transport import TTransport
 from thrift.protocol import TBinaryProtocol
 from thrift.server import TServer
 
-
 class CalculatorHandler:
     def __init__(self):
         self.log = {}
@@ -78,6 +77,7 @@ class CalculatorHandler:
 
 
 if __name__ == '__main__':
+    
     handler = CalculatorHandler()
     processor = Calculator.Processor(handler)
     transport = TSocket.TServerSocket(host='127.0.0.1', port=9090)
