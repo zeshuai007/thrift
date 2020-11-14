@@ -261,7 +261,7 @@ class TFramedTransportFactory(object):
 class TFramedTransport(TTransportBase, CReadableTransport):
     """Class that wraps another transport and frames its I/O when writing."""
 
-    def __init__(self, trans,):
+    def __init__(self, trans):
         self.__trans = trans
         self.__rbuf = BufferIO(b'')
         self.__wbuf = BufferIO()
@@ -285,7 +285,7 @@ class TFramedTransport(TTransportBase, CReadableTransport):
 
     def readFrame(self):
         buff = self.__trans.readAll(4)
-        sz, = unpack('!i', buff)
+        sz = unpack('!i', buff)
         self.__rbuf = BufferIO(self.__trans.readAll(sz))
 
     def write(self, buf):
@@ -432,7 +432,7 @@ class TSaslClientTransport(TTransportBase, CReadableTransport):
 
     def _read_frame(self):
         header = self.transport.readAll(4)
-        length, = unpack('!i', header)
+        length = unpack('!i', header)
         encoded = self.transport.readAll(length)
         self.__rbuf = BufferIO(self.sasl.unwrap(encoded))
 
