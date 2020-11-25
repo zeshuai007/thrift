@@ -113,8 +113,9 @@ thrift_zlib_transport_read_from_zlib(ThriftTransport *transport, GError **error)
   ThriftZlibTransport *t = THRIFT_ZLIB_TRANSPORT (transport);
   gint32 got = 0;
   int zlib_rv = Z_OK;
+  gint32 have = 0;
+
   if (t->input_ended) {
-    printf("???\n");
     /* If input end return error */
     return -1;           
   }
@@ -122,70 +123,69 @@ thrift_zlib_transport_read_from_zlib(ThriftTransport *transport, GError **error)
   /* If we don't have any more compressed data available,
    * read some from the underlying transport.
    */
-  while (zlib_rv != Z_STREAM_END) {
     got = THRIFT_TRANSPORT_GET_CLASS(t->transport)->read (t->transport, t->crbuf, 1, error);
-    if (got <= 0) {
-      return got;
+    if (got < 0) {
+      printf("????%d\n,got");
+      return -1;
     }
     t->rstream->next_in = t->crbuf;
     t->rstream->avail_in = got;
 
     /* We have some compressed data now.  Uncompress it. */
     zlib_rv = inflate (t->rstream, Z_SYNC_FLUSH);
-    printf("zlib_rv:%d\n",zlib_rv);
+    printf("z:%d\n", zlib_rv);
     if (zlib_rv == Z_STREAM_END) {
       t->input_ended = TRUE;
+      inflateEnd(t->rstream);
       return 0;
-    } else {
+    } else { 
      if (zlib_rv != Z_OK) {
-       g_set_error (error, THRIFT_TRANSPORT_ERROR, THRIFT_TRANSPORT_ERROR_RECEIVE,
-                    "zlib error: %d (status = %s)", zlib_rv, t->rstream->msg);
-       /* It must to return error */
-       return -1;
+	printf("zerror\n");
+        g_set_error (error, THRIFT_TRANSPORT_ERROR, THRIFT_TRANSPORT_ERROR_RECEIVE,
+                     "zlib error: %d (status = %s)", zlib_rv, t->rstream->msg);
+        /* It must to return error */
+        return -1;
+     } else {
+       return 1;
      }
    }
- }
-
+  
   /* return 1 to continue to read */
   return 1;
 }
 
 /* implements thrift_transport_read */
 gint32
-thrift_zlib_transport_read (ThriftTransport *transport, gpointer buf,
-                            guint32 len, GError **error)
+thrift_zlib_transport_read_slow (ThriftTransport *transport, gpointer buf,
+                            GError **error)
 {
   ThriftZlibTransport *t = THRIFT_ZLIB_TRANSPORT (transport);
   ThriftTransportClass *ttc = THRIFT_TRANSPORT_GET_CLASS (transport);
   gint *buf_tmp = buf;
-  guint32 need = len;
+  guint32 need = 1;
   gint give;
   gint32 ret = 0;
 
-  if(!ttc->checkReadBytesAvailable (transport, len, error))
-  {
-    return -1;
-  }
 
-  while(1)
+  while(TRUE)
   {
-    if ((guint32)thrift_zlib_transport_read_avail (transport) < need) {
+    if ((guint32)thrift_zlib_transport_read_avail (transport) < 1) {
       give = thrift_zlib_transport_read_avail (transport);
     } else {
       give = need;
     }
-    memcpy (buf_tmp, t->urbuf + t->urpos, give);
-    printf("buf:");
-    for (int i=0;i<give;i++)
-      printf("%d",buf_tmp[i]);
-    printf("\n");
-    need -= give;
+    memcpy (buf_tmp, t->urbuf+t->urpos, give);
+    if (give > need) {
+      need = 0;
+    } else {
+      need -= give;
+    }
     buf_tmp += give;
     t->urpos += give;
 
     /* If they were satisfied, we are done. */
     if (need == 0) {
-      return len;
+      return 1;
     }
     
     /* If we will need to read from the underlying transport to get more data,
@@ -193,15 +193,15 @@ thrift_zlib_transport_read (ThriftTransport *transport, gpointer buf,
      * the underlying transport may block, and read() is only allowed to block
      * when no data is available.
      */
-    if (need < len && t->rstream->avail_in == 0) {
-      return len;
+    if (need < 1 && t->rstream->avail_in == 0) {
+      return give;
     }
 
     /* If we get to this point, we need to get some more data. */
 
     /* If zlib has reported the end of a stream, we can't really do any more. */
     if (t->input_ended) {
-      return len;
+      return 1;
     }
 
     /* The uncompressed read buffer is empty, so reset the stream fields. */
@@ -212,18 +212,39 @@ thrift_zlib_transport_read (ThriftTransport *transport, gpointer buf,
     /* Call inflate() to uncompress some more data. */
     if ((ret = thrift_zlib_transport_read_from_zlib(transport, error)) == 0) {
       /* no data available from underlying transport */
-      printf(":?%d\n", len - need);
-      return len - need;
+      return 1;
     } else {
       if (ret < 0) {
-	printf("unzlib_error\n");
         return -1;
       }
     }
-
-    /* Okay.  The read buffer should have whatever we can give it now. */
-    /* Loop back to the start and try to give some more. */
   }
+  /* Okay.  The read buffer should have whatever we can give it now. */
+  /* Loop back to the start and try to give some more. */
+}
+
+
+gint32
+thrift_zlib_transport_read (ThriftTransport *transport, gpointer buf,
+                             gint len, GError **error)
+{
+  ThriftZlibTransport *t = THRIFT_ZLIB_TRANSPORT (transport);
+  ThriftTransportClass *ttc = THRIFT_TRANSPORT_GET_CLASS (transport);
+  gint32 i, ret;
+
+  if (!ttc->checkReadBytesAvailable (transport, len, error)){
+    return -1;
+  }
+
+  for (i=0; i < len; i=i+ret) {
+    if ((ret = thrift_zlib_transport_read_slow (transport, buf+i, error)) < 0) {
+      return ret;
+    }
+    if (t->input_ended)
+      break;
+  }
+
+  return len;
 }
 
 /* implements thrift_transport_read_end 
@@ -234,11 +255,16 @@ thrift_zlib_transport_read_end (ThriftTransport *transport, GError **error)
   /* satisfy -Wall */
   THRIFT_UNUSED_VAR (error);
   ThriftZlibTransport *t = THRIFT_ZLIB_TRANSPORT (transport);
+  gchar tmp;
+
+  while (!t->input_ended) {
+    thrift_zlib_transport_read_slow (transport, &tmp, NULL); 
+  }
   if (t->input_ended) {
-    printf("ref\n");
-    t->rstream->next_out = t->urbuf;
-    t->rstream->avail_out = t->urbuf_size;
-    t->urpos = 0;
+    if (inflateInit(t->rstream) != Z_OK) {
+      printf("inflate_init fail \n");
+      return FALSE;
+    }
     t->input_ended = FALSE;
   }
   return TRUE;
@@ -269,15 +295,18 @@ thrift_zlib_transport_flush_to_zlib (ThriftTransport *transport, const gint8* bu
 
     if (flush == Z_FINISH && zlib_rv == Z_STREAM_END) {
       if (t->wstream->avail_in != 0) {
+	printf("z_error2\n");
         g_set_error (error, THRIFT_TRANSPORT_ERROR, THRIFT_TRANSPORT_ERROR_SEND,
                      "wstream->avail_in != 0");
         return FALSE;
       }
+      deflateEnd(t->wstream);
       t->output_finished = TRUE;
       break;
     }
 
     if (zlib_rv != Z_OK) {
+      printf("zerror3\n");
       g_set_error (error, THRIFT_TRANSPORT_ERROR, THRIFT_TRANSPORT_ERROR_SEND,
                    "zlib error: %d (status = %s)", zlib_rv, t->wstream->msg);
       return FALSE;
@@ -313,11 +342,10 @@ thrift_zlib_transport_write (ThriftTransport *transport,
                              const gpointer buf,
                              const guint32 len, GError **error)
 {
-  printf("z_transport_begin\n");
-  printf("len:%d\n", len);
   ThriftZlibTransport *t = THRIFT_ZLIB_TRANSPORT (transport);
   
-  if (t->output_finished) {
+  if (t->output_finished) { 
+    printf("finish_error\n");
     g_set_error (error, THRIFT_TRANSPORT_ERROR, THRIFT_TRANSPORT_ERROR_SEND,
 		 "write() called after write_end(): %s",
 		 strerror(errno));
@@ -327,6 +355,7 @@ thrift_zlib_transport_write (ThriftTransport *transport,
   /* zlib's "deflate" function has enough logic in it that I think
    * we're better off (performance-wise) buffering up small writes. */
   if (len > MIN_DIRECT_DEFLATE_SIZE) {
+    printf("wlen:%d\n", len);
     if (!thrift_zlib_transport_flush_to_zlib (transport, (gint8*)t->uwbuf, t->uwpos, Z_NO_FLUSH, error)) {
       return FALSE;
     }
@@ -336,7 +365,7 @@ thrift_zlib_transport_write (ThriftTransport *transport,
     }
     return TRUE;
   } else if (len > 0) {
-    printf("size_have:%d\n",(t->uwbuf_size - t->uwpos));
+    //printf("2w:%d\n", len);
     if ((guint32)(t->uwbuf_size - t->uwpos) < len) {
       if (!thrift_zlib_transport_flush_to_zlib (transport, buf, len, Z_NO_FLUSH, error)) {
         return FALSE;
@@ -345,6 +374,7 @@ thrift_zlib_transport_write (ThriftTransport *transport,
     }
     memcpy (t->uwbuf + t->uwpos, buf, len);
     t->uwpos += len;
+    //printf("tpos:%d\n", t->uwpos);
     return TRUE;
   }
   return FALSE;
@@ -356,18 +386,23 @@ thrift_zlib_transport_flush_to_transport (ThriftTransport *transport, gint flush
   ThriftZlibTransport *t = THRIFT_ZLIB_TRANSPORT (transport);
 
   /* write pending data in uwbuf to zlib */
+  //printf("sdsad:%d\n",t->uwpos);
   if (!thrift_zlib_transport_flush_to_zlib (transport, (gint8*)t->uwbuf, t->uwpos, flush, error)) {
     return FALSE;
   }
+  //printf("defsz:%d\n", t->wstream->total_out);
   t->uwpos = 0;
 
-  printf("transport on net:cwbuf:%s cwbuf_size:%d avail_out:%d\n",t->cwbuf, t->cwbuf_size, t->wstream->avail_out);
   /* write all available data from zlib to the transport */
   if (!THRIFT_TRANSPORT_GET_CLASS (t->transport)->write (t->transport,
                                                     t->cwbuf, (t->cwbuf_size - t->wstream->avail_out),
                                                     error)) {
     return FALSE;
   }
+  //printf("flush data:%d\n",t->wstream->total_out);
+  //int id;
+  //for (id=0; id < (t->cwbuf_size - t->wstream->avail_out); id ++)
+ //    printf("%d:%d\n", id, t->cwbuf[id]);
   t->wstream->next_out = t->cwbuf;
   t->wstream->avail_out = t->cwbuf_size;
 
@@ -384,13 +419,15 @@ gboolean
 thrift_zlib_transport_write_end (ThriftTransport *transport, GError **error)
 {
   ThriftZlibTransport *t = THRIFT_ZLIB_TRANSPORT (transport);
-
+/*
   if (t->output_finished) {
+    printf("enderror\n");
     g_set_error (error, THRIFT_TRANSPORT_ERROR, THRIFT_TRANSPORT_ERROR_SEND,
                  "wirte_end called more than once~!");
     return FALSE;
   }
-  
+*/
+  //printf("wend\n");
   if (!thrift_zlib_transport_flush_to_transport (transport, Z_FINISH, error)) {
     return FALSE;
   }
@@ -413,12 +450,13 @@ thrift_zlib_transport_flush (ThriftTransport *transport, GError **error)
 {
   ThriftZlibTransport *t = THRIFT_ZLIB_TRANSPORT (transport);
   ThriftTransportClass *ttc = THRIFT_TRANSPORT_GET_CLASS (transport);
-
+/*
   if (t->output_finished) {
-    //return FALSE;
+    return TRUE;
   }
-
-  thrift_zlib_transport_flush_to_zlib (transport, (gint8*)t->uwbuf, t->uwpos, Z_BLOCK, error);
+*/
+  //printf("flush:%d\n", t->uwpos);
+  thrift_zlib_transport_flush_to_zlib (transport, (gint8*)t->uwbuf, t->uwpos, Z_NO_FLUSH, error);
   t->uwpos = 0;
 
   if (t->wstream->avail_out < 6) {
@@ -430,8 +468,8 @@ thrift_zlib_transport_flush (ThriftTransport *transport, GError **error)
     t->wstream->next_out = t->cwbuf;
     t->wstream->avail_out = t->cwbuf_size;
   }
-
- /* if (!thrift_zlib_transport_flush_to_transport (transport, Z_FULL_FLUSH, error)) {
+/*
+   if (!thrift_zlib_transport_flush_to_transport (transport, Z_FULL_FLUSH, error)) {
     return FALSE;
   }
   */
@@ -521,11 +559,7 @@ static void
 thrift_zlib_transport_finalize (GObject *object)
 {
   ThriftZlibTransport *t = THRIFT_ZLIB_TRANSPORT (object);
-  if (inflateEnd (t->rstream) != Z_OK) {
-    printf("inflate end fail\n");
-    return;
-  }
-
+  inflateEnd (t->rstream);
   deflateEnd (t->wstream);
 
   if (t->urbuf != NULL) {
